@@ -6,6 +6,11 @@ class CoinDash extends Phaser.Scene {
     const c = COIN_DASH;
     this.score = 0;
     this.finished = false;
+    this.isPaused = false;
+    this.pauseStartTime = 0;
+    this.totalPausedDuration = 0;
+    this.highScore = parseInt(localStorage.getItem('coin_dash_highscore') || '0', 10);
+
     this.deadline = this.time.now + c.roundSeconds * 1000;
     this.physics.world.setBounds(0, 44, c.width, c.height - 44);
     this.add.grid(c.width / 2, c.height / 2, c.width, c.height, 40, 40,
@@ -27,24 +32,43 @@ class CoinDash extends Phaser.Scene {
       drone.body.setVelocity(Math.cos(angle) * c.droneSpeed, Math.sin(angle) * c.droneSpeed);
     }
     this.physics.add.overlap(this.player, this.coin, () => {
-      if (this.finished) return;
+      if (this.finished || this.isPaused) return;
       this.score++;
-      COIN_DASH_SOUNDS.coin();
+      if (typeof COIN_DASH_SOUNDS !== 'undefined') COIN_DASH_SOUNDS.coin();
       this.placeCoin();
     });
     this.physics.add.overlap(this.player, this.drones, () => {
-      if (this.finished) return;
-      COIN_DASH_SOUNDS.caught();
+      if (this.finished || this.isPaused) return;
+      if (typeof COIN_DASH_SOUNDS !== 'undefined') COIN_DASH_SOUNDS.caught();
       this.finish('A drone caught you!');
     });
     this.cursors = this.input.keyboard.createCursorKeys();
-    this.keys = this.input.keyboard.addKeys('W,A,S,D,R');
+    this.keys = this.input.keyboard.addKeys('W,A,S,D,R,P');
     this.input.keyboard.on('keydown-R', () => this.scene.restart());
+    this.input.keyboard.on('keydown-P', () => this.togglePause());
+  }
+
+  togglePause() {
+    if (this.finished) return;
+    this.isPaused = !this.isPaused;
+    if (this.isPaused) {
+      this.physics.pause();
+      this.pauseStartTime = this.time.now;
+      const c = COIN_DASH;
+      this.pauseBg = this.add.rectangle(c.width / 2, c.height / 2, 340, 100, 0x0a1120, 0.9);
+      this.pauseText = this.add.text(c.width / 2, c.height / 2, 'GAME PAUSED\nPress P to resume', {
+        font: '20px monospace', color: '#ffd166', align: 'center', lineSpacing: 8
+      }).setOrigin(0.5);
+    } else {
+      this.physics.resume();
+      this.totalPausedDuration += (this.time.now - this.pauseStartTime);
+      if (this.pauseBg) this.pauseBg.destroy();
+      if (this.pauseText) this.pauseText.destroy();
+    }
   }
 
   placeCoin() {
     const c = COIN_DASH;
-    // Avoid spawning the next coin directly underneath the player.
     let x, y;
     do {
       x = Phaser.Math.Between(25, c.width - 25);
@@ -55,15 +79,18 @@ class CoinDash extends Phaser.Scene {
   }
 
   update() {
-    if (this.finished) return;
+    if (this.finished || this.isPaused) return;
     const dx = Number(this.cursors.right.isDown || this.keys.D.isDown)
       - Number(this.cursors.left.isDown || this.keys.A.isDown);
     const dy = Number(this.cursors.down.isDown || this.keys.S.isDown)
       - Number(this.cursors.up.isDown || this.keys.W.isDown);
     const direction = new Phaser.Math.Vector2(dx, dy).normalize().scale(COIN_DASH.playerSpeed);
     this.player.body.setVelocity(direction.x, direction.y);
-    const seconds = Math.max(0, Math.ceil((this.deadline - this.time.now) / 1000));
-    this.hud.setText(`Coins: ${this.score}                       Time: ${seconds}s`);
+    
+    const remainingTime = this.deadline + this.totalPausedDuration - this.time.now;
+    const seconds = Math.max(0, Math.ceil(remainingTime / 1000));
+    const currentHigh = Math.max(this.score, this.highScore);
+    this.hud.setText(`Coins: ${this.score}   Best: ${currentHigh}   [P: Pause]   Time: ${seconds}s`);
     if (seconds === 0) this.finish('Time is up!');
   }
 
@@ -71,11 +98,17 @@ class CoinDash extends Phaser.Scene {
     if (this.finished) return;
     this.finished = true;
     this.physics.pause();
+    const isNewHigh = this.score > this.highScore;
+    if (isNewHigh) {
+      localStorage.setItem('coin_dash_highscore', String(this.score));
+      this.highScore = this.score;
+    }
     const c = COIN_DASH;
-    this.add.rectangle(c.width / 2, c.height / 2, 460, 150, 0x0a1120, 0.95);
+    this.add.rectangle(c.width / 2, c.height / 2, 480, 170, 0x0a1120, 0.95);
+    const highMsg = isNewHigh ? '\n★ NEW HIGH SCORE! ★' : `\nPersonal Best: ${this.highScore}`;
     this.add.text(c.width / 2, c.height / 2,
-      `${reason}\n${this.score} coins collected\nPress R to try again`,
-      { font: '24px monospace', color: '#ffffff', align: 'center', lineSpacing: 12 }
+      `${reason}\n${this.score} coins collected${highMsg}\nPress R to try again`,
+      { font: '22px monospace', color: '#ffffff', align: 'center', lineSpacing: 10 }
     ).setOrigin(0.5);
   }
 }
