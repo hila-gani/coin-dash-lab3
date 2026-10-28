@@ -18,30 +18,40 @@ class CoinDash extends Phaser.Scene {
   _showDifficultySelect() {
     const c = COIN_DASH;
     this._selectBg = this.add.rectangle(c.width / 2, c.height / 2, 520, 160, 0x0a1120, 0.95);
-    this._selectText = this.add.text(c.width / 2, c.height / 2,
-      'Choose Difficulty\n[1] Easy     [2] Normal     [3] Hard',
-      { font: '22px monospace', color: '#ffffff', align: 'center', lineSpacing: 14 }
+    this._selectText = this.add.text(c.width / 2, c.height / 2 - 35, 'Choose Difficulty',
+      { font: '22px monospace', color: '#ffffff' }
     ).setOrigin(0.5);
-    this._onKey1 = () => this._startRound('Easy');
-    this._onKey2 = () => this._startRound('Normal');
-    this._onKey3 = () => this._startRound('Hard');
-    this.input.keyboard.once('keydown-ONE',   this._onKey1);
-    this.input.keyboard.once('keydown-TWO',   this._onKey2);
-    this.input.keyboard.once('keydown-THREE', this._onKey3);
+
+    // Each option is both a clickable button and bound to its number key.
+    const names = ['Easy', 'Normal', 'Hard'];
+    this._selectButtons = names.map((name, i) => {
+      const button = this.add.text(c.width / 2 + (i - 1) * 160, c.height / 2 + 25, `[${i + 1}] ${name}`,
+        { font: '22px monospace', color: '#ffffff', backgroundColor: '#24334b', padding: { x: 10, y: 6 } }
+      ).setOrigin(0.5).setInteractive({ useHandCursor: true });
+      button.on('pointerover', () => button.setColor('#ffd166'));
+      button.on('pointerout', () => button.setColor('#ffffff'));
+      button.on('pointerdown', () => this._startRound(name));
+      return button;
+    });
+
+    // Match on e.key so both the top-row digits and the numpad work.
+    this._onSelectKey = (e) => {
+      const index = ['1', '2', '3'].indexOf(e.key);
+      if (index !== -1) this._startRound(names[index]);
+    };
+    this.input.keyboard.on('keydown', this._onSelectKey);
   }
 
   _startRound(difficultyName) {
+    if (this.difficulty) return;
     const c = COIN_DASH;
     const preset = c.difficulties[difficultyName];
     this.difficulty = difficultyName;
 
-    // Remove any remaining selection key listeners
-    this.input.keyboard.off('keydown-ONE',   this._onKey1);
-    this.input.keyboard.off('keydown-TWO',   this._onKey2);
-    this.input.keyboard.off('keydown-THREE', this._onKey3);
-
+    this.input.keyboard.off('keydown', this._onSelectKey);
     this._selectBg.destroy();
     this._selectText.destroy();
+    this._selectButtons.forEach((button) => button.destroy());
 
     this.deadline = this.time.now + c.roundSeconds * 1000;
 
