@@ -6,31 +6,79 @@ class CoinDash extends Phaser.Scene {
     const c = COIN_DASH;
     this.score = 0;
     this.finished = false;
+    this.difficulty = null;
     this.isPaused = false;
     this.pauseStartTime = 0;
     this.totalPausedDuration = 0;
     this.highScore = parseInt(localStorage.getItem('coin_dash_highscore') || '0', 10);
 
-    this.deadline = this.time.now + c.roundSeconds * 1000;
     this.physics.world.setBounds(0, 44, c.width, c.height - 44);
     this.add.grid(c.width / 2, c.height / 2, c.width, c.height, 40, 40,
       c.colors.background, 1, 0x24334b, 0.45);
     this.hud = this.add.text(18, 12, '', { font: '18px monospace', color: '#ffffff' });
+    this.input.keyboard.on('keydown-R', () => this.scene.restart());
+    this._showDifficultySelect();
+  }
+
+  _showDifficultySelect() {
+    const c = COIN_DASH;
+    this._selectBg = this.add.rectangle(c.width / 2, c.height / 2, 520, 160, 0x0a1120, 0.95);
+    this._selectText = this.add.text(c.width / 2, c.height / 2 - 35, 'Choose Difficulty',
+      { font: '22px monospace', color: '#ffffff' }
+    ).setOrigin(0.5);
+
+    // Each option is both a clickable button and bound to its number key.
+    const names = ['Easy', 'Normal', 'Hard'];
+    this._selectButtons = names.map((name, i) => {
+      const button = this.add.text(c.width / 2 + (i - 1) * 160, c.height / 2 + 25, `[${i + 1}] ${name}`,
+        { font: '22px monospace', color: '#ffffff', backgroundColor: '#24334b', padding: { x: 10, y: 6 } }
+      ).setOrigin(0.5).setInteractive({ useHandCursor: true });
+      button.on('pointerover', () => button.setColor('#ffd166'));
+      button.on('pointerout', () => button.setColor('#ffffff'));
+      button.on('pointerdown', () => this._startRound(name));
+      return button;
+    });
+
+    // Match on e.key so both the top-row digits and the numpad work.
+    this._onSelectKey = (e) => {
+      const index = ['1', '2', '3'].indexOf(e.key);
+      if (index !== -1) this._startRound(names[index]);
+    };
+    this.input.keyboard.on('keydown', this._onSelectKey);
+  }
+
+  _startRound(difficultyName) {
+    if (this.difficulty) return;
+    const c = COIN_DASH;
+    const preset = c.difficulties[difficultyName];
+    this.difficulty = difficultyName;
+
+    this.input.keyboard.off('keydown', this._onSelectKey);
+    this._selectBg.destroy();
+    this._selectText.destroy();
+    this._selectButtons.forEach((button) => button.destroy());
+
+    this.deadline = this.time.now + c.roundSeconds * 1000;
+
     this.player = this.add.rectangle(c.width / 2, c.height / 2, 24, 24, c.colors.player);
     this.physics.add.existing(this.player);
     this.player.body.setCollideWorldBounds(true);
+
     this.coin = this.add.circle(100, 100, 9, c.colors.coin);
     this.physics.add.existing(this.coin);
     this.coin.body.setCircle(9);
     this.placeCoin();
+
     this.drones = this.physics.add.group();
-    for (let i = 0; i < c.droneCount; i++) {
-      const drone = this.add.rectangle(90 + i * 270, 100, 26, 26, c.colors.drone);
+    for (let i = 0; i < preset.droneCount; i++) {
+      const spacing = c.width / (preset.droneCount + 1);
+      const drone = this.add.rectangle(spacing * (i + 1), 100, 26, 26, c.colors.drone);
       this.drones.add(drone);
       drone.body.setCollideWorldBounds(true).setBounce(1, 1);
       const angle = (35 + i * 105) * Math.PI / 180;
-      drone.body.setVelocity(Math.cos(angle) * c.droneSpeed, Math.sin(angle) * c.droneSpeed);
+      drone.body.setVelocity(Math.cos(angle) * preset.droneSpeed, Math.sin(angle) * preset.droneSpeed);
     }
+
     this.physics.add.overlap(this.player, this.coin, () => {
       if (this.finished || this.isPaused) return;
       this.score++;
@@ -42,14 +90,14 @@ class CoinDash extends Phaser.Scene {
       if (typeof COIN_DASH_SOUNDS !== 'undefined') COIN_DASH_SOUNDS.caught();
       this.finish('A drone caught you!');
     });
+
     this.cursors = this.input.keyboard.createCursorKeys();
-    this.keys = this.input.keyboard.addKeys('W,A,S,D,R,P');
-    this.input.keyboard.on('keydown-R', () => this.scene.restart());
+    this.keys = this.input.keyboard.addKeys('W,A,S,D');
     this.input.keyboard.on('keydown-P', () => this.togglePause());
   }
 
   togglePause() {
-    if (this.finished) return;
+    if (this.finished || !this.difficulty) return;
     this.isPaused = !this.isPaused;
     if (this.isPaused) {
       this.physics.pause();
@@ -79,7 +127,7 @@ class CoinDash extends Phaser.Scene {
   }
 
   update() {
-    if (this.finished || this.isPaused) return;
+    if (this.finished || this.isPaused || !this.difficulty) return;
     const dx = Number(this.cursors.right.isDown || this.keys.D.isDown)
       - Number(this.cursors.left.isDown || this.keys.A.isDown);
     const dy = Number(this.cursors.down.isDown || this.keys.S.isDown)
@@ -90,7 +138,7 @@ class CoinDash extends Phaser.Scene {
     const remainingTime = this.deadline + this.totalPausedDuration - this.time.now;
     const seconds = Math.max(0, Math.ceil(remainingTime / 1000));
     const currentHigh = Math.max(this.score, this.highScore);
-    this.hud.setText(`Coins: ${this.score}   Best: ${currentHigh}   [P: Pause]   Time: ${seconds}s`);
+    this.hud.setText(`[${this.difficulty}] Coins: ${this.score}  Best: ${currentHigh}  [P: Pause]  Time: ${seconds}s`);
     if (seconds === 0) this.finish('Time is up!');
   }
 
